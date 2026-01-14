@@ -1,27 +1,45 @@
 version: '3.8'
 
 services:
-  data-pipeline:
-    # We use a Spark image because it contains Python + Java + Spark + Iceberg
-    image: tabulario/spark-iceberg:3.5.0_1.4.2
-    container_name: iceberg_pipeline
+  zookeeper:
+    # UPDATED: Use the 'legacy' repo which is still free/public
+    image: bitnamilegacy/zookeeper:3.9.0
+    container_name: zookeeper
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    ports:
+      - '2181:2181'
 
+  kafka:
+    # UPDATED: Use the 'legacy' repo
+    image: bitnamilegacy/kafka:3.5.1
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - '9092:9092'
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+
+  data-pipeline:
+    build: .
+    container_name: iceberg_pipeline
     tty: true
     stdin_open: true
-
-    # VOLUME MAPPING: Host Path : Container Path
+    depends_on:
+      - kafka
     volumes:
-      - ./code:/opt/scripts # Maps your script
-      - ./input_data:/opt/data/input # Maps input folder
-      - ./archive_data:/opt/data/archive # Maps archive folder
-      - ./warehouse:/opt/data/warehouse # Maps warehouse folder
-
-    # Define paths as environment variables so Python can read them
+      - ./code:/opt/scripts
+      - ./input_data:/opt/data/input
+      - ./archive_data:/opt/data/archive
+      - ./warehouse:/opt/data/warehouse
     environment:
       - INPUT_DIR=/opt/data/input
       - ARCHIVE_DIR=/opt/data/archive
       - WAREHOUSE_DIR=/opt/data/warehouse
-
-    # Automatically run the script when container starts
-    # command: python3 /opt/scripts/pipeline.py
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     command: tail -f /dev/null

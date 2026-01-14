@@ -1,7 +1,7 @@
 import os
 import shutil
 from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import col,lit,when,row_number
+from pyspark.sql.functions import col,lit,when,row_number,from_json, col, to_date, timestamp_seconds
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType,TimestampType
 import sys
 
@@ -12,7 +12,6 @@ import sys
 
 
 WAREHOUSE_DIR = "/opt/data/warehouse"
-
 
 
 
@@ -43,6 +42,7 @@ def get_spark_session():
         .config(f"spark.sql.catalog.{catalog_name}.warehouse", WAREHOUSE_DIR) \
         \
         .config("spark.sql.defaultCatalog", catalog_name) \
+        .config("spark.sql.shuffle.partitions", "4") \
         .getOrCreate()
 
 def user_dimensional_table_ingestion(param_table_name):
@@ -269,8 +269,83 @@ def countries_dimensional_table_ingestion(param_table_name):
     #     print(f"Moved {file} to archive.")
 
 
-def events_stream_ingestion():
+def events_stream_ingestion(param_table_name):
+
+    KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
+    KAFKA_TOPIC = "events_topic"
+    # CHECKPOINT_DIR = os.path.join(WAREHOUSE_DIR, "checkpoints", "events_3")
+    OUTPUT_PATH = os.path.join(WAREHOUSE_DIR, "events_data")  
+
+    CHECKPOINT_DIR = "/tmp/checkpoints/events_clean_start"
+
+    # --- 2. ADD THIS CLEANUP BLOCK HERE ---
+    # This deletes the corrupt checkpoint every time you run the script
+    if os.path.exists(CHECKPOINT_DIR):
+        print(f"🧹 Deleting old checkpoint at {CHECKPOINT_DIR}...")
+        shutil.rmtree(CHECKPOINT_DIR)
+
+
+    print(CHECKPOINT_DIR, OUTPUT_PATH)      
+
     print("starting stream")
+    spark = get_spark_session()
+    spark.sparkContext.setLogLevel("WARN")
+
+    # 1. Define Schema for incoming JSON
+    schema = StructType() \
+        .add("event_id", StringType()) \
+        .add("user_id", StringType()) \
+        .add("event_type", StringType()) \
+        .add("event_timestamp", TimestampType())
+
+    # 2. Read Stream from Kafka
+    # We load the "kafka" format. The "value" column contains our JSON data.
+    raw_stream = spark.readStream \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS) \
+        .option("subscribe", KAFKA_TOPIC) \
+        .option("startingOffsets", "earliest") \
+        .load()
+
+    # 3. Parse JSON and Extract Fields
+    parsed_stream = raw_stream.select(
+        from_json(col("value").cast("string"), schema).alias("data")
+    ).select("data.*")
+
+    # 4. Add 'date' column for Partitioning
+    processed_df = parsed_stream.withColumn("date", to_date(col("event_timestamp")))
+
+    # 5. Deduplication
+    # Important: For streaming deduplication, we MUST use a watermark.
+    # This tells Spark: "Drop duplicates, but only remember data for 10 minutes."
+
+    # deduped_df = processed_df \
+    #     .withWatermark("event_timestamp", "10 minutes") \
+    #     .dropDuplicates(["event_id"])
+
+    deduped_df = processed_df.coalesce(1)
+
+# for showing purpose not to write the data
+    query = deduped_df.writeStream \
+    .format("console") \
+    .outputMode("append") \
+    .option("truncate", "false") \
+    .start()
+
+
+    query = deduped_df.writeStream \
+        .format("parquet") \
+        .outputMode("append") \
+        .option("path", OUTPUT_PATH) \
+        .option("checkpointLocation", CHECKPOINT_DIR) \
+        .partitionBy("date") \
+        .start()
+    
+    print("data write to table compleed")
+    
+
+    print(f"Streaming started. Writing to {OUTPUT_PATH}...")
+    query.awaitTermination()
 
 if __name__ == "__main__":
 
@@ -296,8 +371,8 @@ if __name__ == "__main__":
     #     case _:  
     #         print(f"Unexpected job_type {job_type}")
     
-    if job_type == "stream":
-        print("running stream job")
+    if job_type == "streaming":
+        events_stream_ingestion(table_name)
     elif job_type == "batch":
         if table_name == "user":
             print(f"running {table_name} table batch job")
