@@ -52,7 +52,7 @@ def output_data(date_param):
     output_df.show(truncate=False)
     print(output_df.count())
     
-    output_df.write.partitionBy("date").option("mode","append").parquet("/opt/data/warehouse/output_data")
+    output_df.write.partitionBy("date").option("mode","overwrite").parquet("/opt/data/warehouse/output_data")
 
 if __name__ == "__main__":
     output_data("2026-01-14")
