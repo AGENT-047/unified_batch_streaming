@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  data-pipeline:
+    # We use a Spark image because it contains Python + Java + Spark + Iceberg
+    image: tabulario/spark-iceberg:3.5.0_1.4.2
+    container_name: iceberg_pipeline
+
+    tty: true
+    stdin_open: true
+
+    # VOLUME MAPPING: Host Path : Container Path
+    volumes:
+      - ./code:/opt/scripts # Maps your script
+      - ./input_data:/opt/data/input # Maps input folder
+      - ./archive_data:/opt/data/archive # Maps archive folder
+      - ./warehouse:/opt/data/warehouse # Maps warehouse folder
+
+    # Define paths as environment variables so Python can read them
+    environment:
+      - INPUT_DIR=/opt/data/input
+      - ARCHIVE_DIR=/opt/data/archive
+      - WAREHOUSE_DIR=/opt/data/warehouse
+
+    # Automatically run the script when container starts
+    # command: python3 /opt/scripts/pipeline.py
+    command: tail -f /dev/null

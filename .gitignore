@@ -1,0 +1,43 @@
+# Ignore everything inside the warehouse folder
+warehouse/*
+
+# ...But do NOT ignore t:he .gitkeep file
+!warehouse/.gitkeep
+
+archive_data/user/*
+!archive_data/user/.gitkeep
+
+archive_data/events/*
+!archive_data/events/.gitkeep
+
+
+archive_data/countries/*
+!archive_data/countries/.gitkeep
+
+# --- Python Standards ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / Packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+# --- Virtual Environments (Very Important) ---
+# Common names for virtual envs
+venv/
+env/
+ENV/
+.env/
+.venv/
+# --- IDE Settings (VS Code & JetBrains) ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+
